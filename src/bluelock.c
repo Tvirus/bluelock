@@ -2,6 +2,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <ctype.h>
+#include <time.h>
 
 #include "dbus/dbus.h"
 #include "mbedtls/aes.h"
@@ -99,7 +100,7 @@ static int get_hci_obj_str(u32 hci, char *buf, unsigned int buf_len)
     len = snprintf(buf, buf_len, "/org/bluez/hci%u", hci);
     if (buf_len <= len)
     {
-        ERROR("obj len(%d) exceeds buf len(%u) !", len, buf_len);
+        ERROR("object len(%d) exceeds buf len(%u) !", len, buf_len);
         return -1;
     }
     return len;
@@ -113,7 +114,7 @@ static int get_dev_obj_str(u32 hci, const char *mac, char *buf, unsigned int buf
     len = snprintf(buf, buf_len, "/org/bluez/hci%u/dev_%s", hci, mac);
     if (buf_len <= len)
     {
-        ERROR("obj len(%d) exceeds buf len(%u) !", len, buf_len);
+        ERROR("object len(%d) exceeds buf len(%u) !", len, buf_len);
         return -1;
     }
     for (i = 0; i < len; i++)
@@ -139,12 +140,12 @@ DBusMessage* method_call_reply(DBusConnection *conn, DBusMessage *msg)
 
     if (!dbus_connection_send_with_reply(conn, msg, &pending, -1))
     {
-        ERROR("dbus_connection_send_with_reply failed !\n");
+        ERROR("dbus_connection_send_with_reply failed !");
         return NULL;
     }
     if (NULL == pending)
     {
-        ERROR("pending is NULL !\n");
+        ERROR("pending is NULL !");
         return NULL;
     }
     dbus_connection_flush(conn);
@@ -153,7 +154,7 @@ DBusMessage* method_call_reply(DBusConnection *conn, DBusMessage *msg)
     msg_recv = dbus_pending_call_steal_reply(pending);
     if (NULL == msg_recv)
     {
-        ERROR("reply is NULL !\n");
+        ERROR("reply is NULL !");
         dbus_pending_call_unref(pending);
         return NULL;
     }
@@ -206,8 +207,7 @@ int has_object(DBusConnection *conn, const char *dest, const char *obj)
 
 
     if (NULL == conn || NULL == dest || NULL == obj)
-        return -1;
-
+        return 0;
 
     msg_send = dbus_message_new_method_call(dest, "/",
                                             "org.freedesktop.DBus.ObjectManager",
@@ -238,6 +238,7 @@ int has_object(DBusConnection *conn, const char *dest, const char *obj)
         if (DBUS_TYPE_OBJECT_PATH != dbus_message_iter_get_arg_type(&args_ae))
             goto EXIT;
         dbus_message_iter_get_basic(&args_ae, &_obj);
+        //DEBUG("has object: %s", _obj);
         if (0 == strcmp(obj, _obj))
         {
             has = 1;
@@ -273,7 +274,7 @@ int _is_powered(DBusConnection *conn, const char *hci_obj)
                              "Powered");
     if (NULL == msg)
     {
-        ERROR("failed to get 'Powered' \"%s\" !\n", hci_obj);
+        ERROR("failed to get 'Powered' \"%s\" !", hci_obj);
         return 0;
     }
     if (!dbus_message_iter_init(msg, &args))
@@ -310,9 +311,9 @@ int set_power(DBusConnection *conn, const char *hci_obj, int on)
     if ((NULL == conn) || (NULL == hci_obj))
         return -1;
 
-    if (!has_object(conn, "org.bluez", hci_obj))
+    if (0 == has_object(conn, "org.bluez", hci_obj))
     {
-        ERROR("hci obj not exist \"%s\" !", hci_obj);
+        ERROR("hci object does not exist \"%s\" !", hci_obj);
         return -1;
     }
     if (_is_powered(conn, hci_obj) == on)
@@ -350,7 +351,7 @@ int set_power(DBusConnection *conn, const char *hci_obj, int on)
     }
     if (0 >= i)
     {
-        ERROR("failed to set 'Powered'(%u) \"%s\" !\n", on, hci_obj);
+        ERROR("failed to set 'Powered'(%u) \"%s\" !", on, hci_obj);
         goto EXIT;
     }
 
@@ -376,7 +377,7 @@ int _is_discovering(DBusConnection *conn, const char *hci_obj)
                              "Discovering");
     if (NULL == msg)
     {
-        ERROR("failed to get 'Discovering' \"%s\" !\n", hci_obj);
+        ERROR("failed to get 'Discovering' \"%s\" !", hci_obj);
         return 0;
     }
     if (!dbus_message_iter_init(msg, &args))
@@ -400,16 +401,16 @@ int set_discovering(DBusConnection *conn, const char *hci_obj, int on)
 
     on = !!on;
     if (on)
-        DEBUG("scan on");
+        DEBUG("start discovery");
     else
-        DEBUG("scan off");
+        DEBUG("stop discovery");
 
     if ((NULL == conn) || (NULL == hci_obj))
         return -1;
 
-    if (!has_object(conn, "org.bluez", hci_obj))
+    if (0 == has_object(conn, "org.bluez", hci_obj))
     {
-        ERROR("hci obj not exist \"%s\" !", hci_obj);
+        ERROR("hci object does not exist \"%s\" !", hci_obj);
         return -1;
     }
     if (_is_discovering(conn, hci_obj) == on)
@@ -447,7 +448,7 @@ int set_discovering(DBusConnection *conn, const char *hci_obj, int on)
     }
     if (0 >= i)
     {
-        ERROR("failed to set 'Discovering'(%u) \"%s\" !\n", on, hci_obj);
+        ERROR("failed to set 'Discovering'(%u) \"%s\" !", on, hci_obj);
         return -1;
     }
 
@@ -469,7 +470,7 @@ int _is_connected(DBusConnection *conn, const char *dev_obj)
                              "Connected");
     if (NULL == msg)
     {
-        ERROR("failed to get 'Connected' \"%s\" !\n", dev_obj);
+        ERROR("failed to get 'Connected' \"%s\" !", dev_obj);
         return 0;
     }
     if (!dbus_message_iter_init(msg, &args))
@@ -498,39 +499,21 @@ int set_connect(DBusConnection *conn, const char *dev_obj, int on)
         DEBUG("disconnect dev");
 
     if ((NULL == conn) || (NULL == dev_obj))
-        return 0;
+        return -1;
 
-    if (on)
+    if (0 == has_object(conn, "org.bluez", dev_obj))
     {
-        if (bluelock_debug)
+        if (on)
         {
-            printf("--BlueLock-- find dev ");
-            fflush(stdout);
-        }
-        for (i = 70; i > 0; i--)
-        {
-            if (has_object(conn, "org.bluez", dev_obj))
-                break;
-            if (bluelock_debug)
-            {
-                printf(".");
-                fflush(stdout);
-            }
-            usleep(300*1000);
-        }
-        if (bluelock_debug)
-            printf("\n");
-        if (0 >= i)
-        {
-            ERROR("failed to find dev \"%s\" !\n", dev_obj);
+            ERROR("dev object does not exist \"%s\" !", dev_obj);
             return -1;
         }
-    }
-    else
-    {
-        if (!has_object(conn, "org.bluez", dev_obj))
+        else
+        {
             return 0;
+        }
     }
+
     if (_is_connected(conn, dev_obj) == on)
         return 0;
 
@@ -562,7 +545,7 @@ int set_connect(DBusConnection *conn, const char *dev_obj, int on)
             printf("--BlueLock-- wait disconnect ");
         fflush(stdout);
     }
-    for (i = 100; i > 0; i--)
+    for (i = 70; i > 0; i--)
     {
         if (_is_connected(conn, dev_obj) == on)
             break;
@@ -578,9 +561,9 @@ int set_connect(DBusConnection *conn, const char *dev_obj, int on)
     if (0 >= i)
     {
         if (on)
-            ERROR("failed to connect to dev \"%s\" !", dev_obj);
+            ERROR("failed to connect dev \"%s\" !", dev_obj);
         else
-            ERROR("failed to disconnect to dev \"%s\" !", dev_obj);
+            ERROR("failed to disconnect dev \"%s\" !", dev_obj);
         return -1;
     }
 
@@ -602,7 +585,7 @@ int _is_notifying(DBusConnection *conn, const char *gatt_obj)
                              "Notifying");
     if (NULL == msg)
     {
-        ERROR("failed to get 'Notifying' \"%s\" !\n", gatt_obj);
+        ERROR("failed to get 'Notifying' \"%s\" !", gatt_obj);
         return 0;
     }
     if (!dbus_message_iter_init(msg, &args))
@@ -633,16 +616,9 @@ int set_notifying(DBusConnection *conn, const char *gatt_obj, int on)
     if ((NULL == conn) || (NULL == gatt_obj))
         return -1;
 
-    for (i = 20; i > 0; i--)
+    if (0 == has_object(conn, "org.bluez", gatt_obj))
     {
-        if (has_object(conn, "org.bluez", gatt_obj))
-            break;
-        //DEBUG("wait gatt read obj \"%s\"", gatt_obj);
-        usleep(100*1000);
-    }
-    if (0 >= i)
-    {
-        ERROR("failed to find gatt read obj \"%s\" !\n", gatt_obj);
+        ERROR("gatt object does not exist \"%s\" !", gatt_obj);
         return -1;
     }
     if (_is_notifying(conn, gatt_obj) == on)
@@ -687,6 +663,298 @@ int set_notifying(DBusConnection *conn, const char *gatt_obj, int on)
 }
 
 
+int _get_dev_addr(DBusConnection* conn, const char *dev_obj, char *addr, u32 len)
+{
+    DBusMessage *msg;
+    DBusMessageIter args;
+    DBusMessageIter args_v;
+    //char *err_str;
+    char *paddr;
+    int _len;
+
+
+    addr[0] = 0;
+
+    msg = get_property(conn, "org.bluez", dev_obj, "org.bluez.Device1", "Address");
+    if (NULL == msg)
+    {
+        ERROR("failed to get dev 'Address' \"%s\" !", dev_obj);
+        return -1;
+    }
+    if (!dbus_message_iter_init(msg, &args))
+        goto EXIT;
+    if (DBUS_TYPE_STRING == dbus_message_iter_get_arg_type(&args))
+    {
+        //dbus_message_iter_get_basic(&args, &err_str);
+        //ERROR("reply error \"%s\" !", err_str);
+        goto EXIT;
+    }
+    if (DBUS_TYPE_VARIANT != dbus_message_iter_get_arg_type(&args))
+        goto EXIT;
+    dbus_message_iter_recurse(&args, &args_v);
+    if (DBUS_TYPE_STRING != dbus_message_iter_get_arg_type(&args_v))
+        goto EXIT;
+    dbus_message_iter_get_basic(&args_v, &paddr);
+    dbus_message_unref(msg);
+    _len = snprintf(addr, len, "%s", paddr);
+    if (len <= _len)
+        return -1;
+
+    return 0;
+
+EXIT:
+    dbus_message_unref(msg);
+    return -1;
+}
+
+int _get_dev_name(DBusConnection* conn, const char *dev_obj, char *name, u32 len)
+{
+    DBusMessage *msg;
+    DBusMessageIter args;
+    DBusMessageIter args_v;
+    //char *err_str;
+    char *pname;
+
+
+    name[0] = 0;
+
+    msg = get_property(conn, "org.bluez", dev_obj, "org.bluez.Device1", "Name");
+    if (NULL == msg)
+    {
+        ERROR("failed to get dev 'Name' \"%s\" !", dev_obj);
+        return -1;
+    }
+    if (!dbus_message_iter_init(msg, &args))
+        goto EXIT;
+    if (DBUS_TYPE_STRING == dbus_message_iter_get_arg_type(&args))
+    {
+        //dbus_message_iter_get_basic(&args, &err_str);
+        //ERROR("reply error \"%s\" !", err_str);
+        goto EXIT;
+    }
+    if (DBUS_TYPE_VARIANT != dbus_message_iter_get_arg_type(&args))
+        goto EXIT;
+    dbus_message_iter_recurse(&args, &args_v);
+    if (DBUS_TYPE_STRING != dbus_message_iter_get_arg_type(&args_v))
+        goto EXIT;
+    dbus_message_iter_get_basic(&args_v, &pname);
+    dbus_message_unref(msg);
+    snprintf(name, len, "%s", pname);
+
+    return 0;
+
+EXIT:
+    dbus_message_unref(msg);
+    return -1;
+}
+
+int _get_dev_rssi(DBusConnection* conn, const char *dev_obj, s16 *rssi)
+{
+    DBusMessage *msg;
+    DBusMessageIter args;
+    DBusMessageIter args_v;
+    //char *err_str;
+
+
+    *rssi = -1000;
+
+    msg = get_property(conn, "org.bluez", dev_obj, "org.bluez.Device1", "RSSI");
+    if (NULL == msg)
+    {
+        ERROR("failed to get dev 'RSSI' \"%s\" !", dev_obj);
+        return -1;
+    }
+    if (!dbus_message_iter_init(msg, &args))
+        goto EXIT;
+    if (DBUS_TYPE_STRING == dbus_message_iter_get_arg_type(&args))
+    {
+        //dbus_message_iter_get_basic(&args, &err_str);
+        //ERROR("reply error \"%s\" !", err_str);
+        goto EXIT;
+    }
+    if (DBUS_TYPE_VARIANT != dbus_message_iter_get_arg_type(&args))
+        goto EXIT;
+    dbus_message_iter_recurse(&args, &args_v);
+    if (DBUS_TYPE_INT16 != dbus_message_iter_get_arg_type(&args_v))
+        goto EXIT;
+    dbus_message_iter_get_basic(&args_v, rssi);
+    dbus_message_unref(msg);
+
+    return 0;
+
+EXIT:
+    dbus_message_unref(msg);
+    return -1;
+}
+
+int _get_gatt_uuid(DBusConnection* conn, const char *gatt_obj, char *uuid, u32 len)
+{
+    DBusMessage *msg;
+    DBusMessageIter args;
+    DBusMessageIter args_v;
+    //char *err_str;
+    char *puuid;
+    int _len;
+
+
+    uuid[0] = 0;
+
+    msg = get_property(conn, "org.bluez", gatt_obj, "org.bluez.GattCharacteristic1", "UUID");
+    if (NULL == msg)
+    {
+        ERROR("failed to get dev 'UUID' \"%s\" !", gatt_obj);
+        return -1;
+    }
+    if (!dbus_message_iter_init(msg, &args))
+        goto EXIT;
+    if (DBUS_TYPE_STRING == dbus_message_iter_get_arg_type(&args))
+    {
+        //dbus_message_iter_get_basic(&args, &err_str);
+        //ERROR("reply error \"%s\" !", err_str);
+        goto EXIT;
+    }
+    if (DBUS_TYPE_VARIANT != dbus_message_iter_get_arg_type(&args))
+        goto EXIT;
+    dbus_message_iter_recurse(&args, &args_v);
+    if (DBUS_TYPE_STRING != dbus_message_iter_get_arg_type(&args_v))
+        goto EXIT;
+    dbus_message_iter_get_basic(&args_v, &puuid);
+    dbus_message_unref(msg);
+    _len = snprintf(uuid, len, "%s", puuid);
+    if (len <= _len)
+        return -1;
+
+    return 0;
+
+EXIT:
+    dbus_message_unref(msg);
+    return -1;
+}
+
+
+
+
+int power_on(const BL_ctx_t *ctx)
+{
+    if (NULL == ctx)
+        return -1;
+    return set_power(ctx->conn, ctx->hci_obj, 1);
+}
+int power_off(const BL_ctx_t *ctx)
+{
+    if (NULL == ctx)
+        return -1;
+    return set_power(ctx->conn, ctx->hci_obj, 0);
+}
+
+
+int scan_on(const BL_ctx_t *ctx)
+{
+    if (NULL == ctx)
+        return -1;
+    return set_discovering(ctx->conn, ctx->hci_obj, 1);
+}
+int scan_off(const BL_ctx_t *ctx)
+{
+    if (NULL == ctx)
+        return -1;
+    return set_discovering(ctx->conn, ctx->hci_obj, 0);
+}
+
+
+int connect_dev(const BL_ctx_t *ctx)
+{
+    int i;
+
+
+    if (NULL == ctx)
+        return -1;
+
+    set_discovering(ctx->conn, ctx->hci_obj, 1);
+
+    if (0 == has_object(ctx->conn, "org.bluez", ctx->dev_obj))
+    {
+        if (bluelock_debug)
+        {
+            printf("--BlueLock-- find dev ");
+            fflush(stdout);
+        }
+        for (i = 40; i > 0; i--)
+        {
+            if (has_object(ctx->conn, "org.bluez", ctx->dev_obj))
+                break;
+            if (bluelock_debug)
+            {
+                printf(".");
+                fflush(stdout);
+            }
+            usleep(300*1000);
+        }
+        if (bluelock_debug)
+            printf("\n");
+        if (0 >= i)
+        {
+            ERROR("failed to find dev \"%s\" !", ctx->dev_obj);
+            return -1;
+        }
+    }
+    else
+    {
+        DEBUG("find dev");
+    }
+
+    //set_discovering(ctx->conn, ctx->hci_obj, 0);
+
+    if (set_connect(ctx->conn, ctx->dev_obj, 1))
+        return -1;
+
+    for (i = 30; i > 0; i--)
+    {
+        if (has_object(ctx->conn, "org.bluez", ctx->gatt_w_obj))
+            break;
+        usleep(100*1000);
+    }
+    if (0 >= i)
+    {
+        ERROR("failed to find gatt write object \"%s\" !", ctx->gatt_w_obj);
+        return -1;
+    }
+    for (i = 10; i > 0; i--)
+    {
+        if (has_object(ctx->conn, "org.bluez", ctx->gatt_r_obj))
+            break;
+        usleep(100*1000);
+    }
+    if (0 >= i)
+    {
+        ERROR("failed to find gatt read object \"%s\" !", ctx->gatt_r_obj);
+        return -1;
+    }
+
+    return 0;
+}
+int disconnect_dev(const BL_ctx_t *ctx)
+{
+    if (NULL == ctx)
+        return -1;
+    return set_connect(ctx->conn, ctx->dev_obj, 0);
+}
+
+
+int start_notify(const BL_ctx_t *ctx)
+{
+    if (NULL == ctx)
+        return -1;
+    return set_notifying(ctx->conn, ctx->gatt_r_obj, 1);
+}
+int stop_notify(const BL_ctx_t *ctx)
+{
+    if (NULL == ctx)
+        return -1;
+    return set_notifying(ctx->conn, ctx->gatt_r_obj, 0);
+}
+
+
 int _get_data_from_replay(DBusMessage *msg, u8 **data)
 {
     DBusMessageIter args;
@@ -717,7 +985,7 @@ int _get_data_from_replay(DBusMessage *msg, u8 **data)
     if (DBUS_TYPE_STRING != dbus_message_iter_get_arg_type(&args_ae))
         return -1;
     dbus_message_iter_get_basic(&args_ae, &prop_name);
-    if (0 != strcmp("Value", prop_name))
+    if (strcmp("Value", prop_name))
         return -1;
     if (!dbus_message_iter_next(&args_ae))
         return -1;
@@ -752,35 +1020,22 @@ int send_cmd(const BL_ctx_t *ctx, u8 cmd_id, const u8 *indata, u8 *outdata)
 
     if ((NULL == ctx) || (NULL == indata) || (NULL == outdata))
         return -1;
-
-    for (i = 30; i > 0; i--)
+/*
+    if (has_object(ctx->conn, "org.bluez", ctx->gatt_w_obj))
     {
-        if (has_object(ctx->conn, "org.bluez", ctx->gatt_w_obj))
-            break;
-        //DEBUG("wait gatt write obj");
-        usleep(100*1000);
-    }
-    if (0 >= i)
-    {
-        ERROR("failed to find gatt write obj \"%s\" !\n", ctx->gatt_w_obj);
+        ERROR("failed to find gatt write object \"%s\" !", ctx->gatt_w_obj);
         return -1;
     }
-    for (i = 10; i > 0; i--)
+    if (has_object(ctx->conn, "org.bluez", ctx->gatt_r_obj))
     {
-        if (has_object(ctx->conn, "org.bluez", ctx->gatt_r_obj))
-            break;
-        //DEBUG("wait gatt read obj");
-        usleep(100*1000);
-    }
-    if (0 >= i)
-    {
-        ERROR("failed to find gatt read obj \"%s\" !\n", ctx->gatt_r_obj);
+        ERROR("failed to find gatt read object \"%s\" !", ctx->gatt_r_obj);
         return -1;
     }
-
+*/
     /* 打开信号接收 */
-    if (0 != set_notifying(ctx->conn, ctx->gatt_r_obj, 1))
+    if (set_notifying(ctx->conn, ctx->gatt_r_obj, 1))
         return -1;
+
     if (sizeof(rule) <= snprintf(rule, sizeof(rule), "type='signal',path='%s'", ctx->gatt_r_obj))
     {
         ERROR("rule len exceeds buf len !");
@@ -837,7 +1092,7 @@ int send_cmd(const BL_ctx_t *ctx, u8 cmd_id, const u8 *indata, u8 *outdata)
         printf("--BlueLock-- wait reply ");
         fflush(stdout);
     }
-    for (i = 40; i > 0; i--)
+    for (i = 50; i > 0; i--)
     {
         if (!dbus_connection_read_write(ctx->conn, 0))
             goto EXIT_SEND;
@@ -912,230 +1167,6 @@ int send_cmd_retry(const BL_ctx_t *ctx, u8 cmd_id, const u8 *indata, u8 *outdata
 }
 
 
-int _get_dev_rssi(DBusConnection* conn, const char *dev_obj, s16 *rssi)
-{
-    DBusMessage *msg;
-    DBusMessageIter args;
-    DBusMessageIter args_v;
-    //char *err_str;
-
-
-    *rssi = -1000;
-
-    msg = get_property(conn, "org.bluez", dev_obj, "org.bluez.Device1", "RSSI");
-    if (NULL == msg)
-    {
-        ERROR("failed to get dev 'RSSI' \"%s\" !", dev_obj);
-        return -1;
-    }
-    if (!dbus_message_iter_init(msg, &args))
-        goto EXIT;
-    if (DBUS_TYPE_STRING == dbus_message_iter_get_arg_type(&args))
-    {
-        //dbus_message_iter_get_basic(&args, &err_str);
-        //ERROR("reply error \"%s\" !", err_str);
-        goto EXIT;
-    }
-    if (DBUS_TYPE_VARIANT != dbus_message_iter_get_arg_type(&args))
-        goto EXIT;
-    dbus_message_iter_recurse(&args, &args_v);
-    if (DBUS_TYPE_INT16 != dbus_message_iter_get_arg_type(&args_v))
-        goto EXIT;
-    dbus_message_iter_get_basic(&args_v, rssi);
-    dbus_message_unref(msg);
-
-    return 0;
-
-EXIT:
-    dbus_message_unref(msg);
-    return -1;
-}
-
-int _get_dev_name(DBusConnection* conn, const char *dev_obj, char *name, u32 len)
-{
-    DBusMessage *msg;
-    DBusMessageIter args;
-    DBusMessageIter args_v;
-    //char *err_str;
-    char *pname;
-
-
-    name[0] = 0;
-
-    msg = get_property(conn, "org.bluez", dev_obj, "org.bluez.Device1", "Name");
-    if (NULL == msg)
-    {
-        ERROR("failed to get dev 'Name' \"%s\" !", dev_obj);
-        return -1;
-    }
-    if (!dbus_message_iter_init(msg, &args))
-        goto EXIT;
-    if (DBUS_TYPE_STRING == dbus_message_iter_get_arg_type(&args))
-    {
-        //dbus_message_iter_get_basic(&args, &err_str);
-        //ERROR("reply error \"%s\" !", err_str);
-        goto EXIT;
-    }
-    if (DBUS_TYPE_VARIANT != dbus_message_iter_get_arg_type(&args))
-        goto EXIT;
-    dbus_message_iter_recurse(&args, &args_v);
-    if (DBUS_TYPE_STRING != dbus_message_iter_get_arg_type(&args_v))
-        goto EXIT;
-    dbus_message_iter_get_basic(&args_v, &pname);
-    dbus_message_unref(msg);
-    snprintf(name, len, "%s", pname);
-
-    return 0;
-
-EXIT:
-    dbus_message_unref(msg);
-    return -1;
-}
-
-int _get_dev_addr(DBusConnection* conn, const char *dev_obj, char *addr, u32 len)
-{
-    DBusMessage *msg;
-    DBusMessageIter args;
-    DBusMessageIter args_v;
-    //char *err_str;
-    char *paddr;
-    int _len;
-
-
-    addr[0] = 0;
-
-    msg = get_property(conn, "org.bluez", dev_obj, "org.bluez.Device1", "Address");
-    if (NULL == msg)
-    {
-        ERROR("failed to get dev 'Address' \"%s\" !", dev_obj);
-        return -1;
-    }
-    if (!dbus_message_iter_init(msg, &args))
-        goto EXIT;
-    if (DBUS_TYPE_STRING == dbus_message_iter_get_arg_type(&args))
-    {
-        //dbus_message_iter_get_basic(&args, &err_str);
-        //ERROR("reply error \"%s\" !", err_str);
-        goto EXIT;
-    }
-    if (DBUS_TYPE_VARIANT != dbus_message_iter_get_arg_type(&args))
-        goto EXIT;
-    dbus_message_iter_recurse(&args, &args_v);
-    if (DBUS_TYPE_STRING != dbus_message_iter_get_arg_type(&args_v))
-        goto EXIT;
-    dbus_message_iter_get_basic(&args_v, &paddr);
-    dbus_message_unref(msg);
-    _len = snprintf(addr, len, "%s", paddr);
-    if (len <= _len)
-        return -1;
-
-    return 0;
-
-EXIT:
-    dbus_message_unref(msg);
-    return -1;
-}
-
-int _get_gatt_uuid(DBusConnection* conn, const char *gatt_obj, char *uuid, u32 len)
-{
-    DBusMessage *msg;
-    DBusMessageIter args;
-    DBusMessageIter args_v;
-    //char *err_str;
-    char *puuid;
-    int _len;
-
-
-    uuid[0] = 0;
-
-    msg = get_property(conn, "org.bluez", gatt_obj, "org.bluez.GattCharacteristic1", "UUID");
-    if (NULL == msg)
-    {
-        ERROR("failed to get dev 'UUID' \"%s\" !", gatt_obj);
-        return -1;
-    }
-    if (!dbus_message_iter_init(msg, &args))
-        goto EXIT;
-    if (DBUS_TYPE_STRING == dbus_message_iter_get_arg_type(&args))
-    {
-        //dbus_message_iter_get_basic(&args, &err_str);
-        //ERROR("reply error \"%s\" !", err_str);
-        goto EXIT;
-    }
-    if (DBUS_TYPE_VARIANT != dbus_message_iter_get_arg_type(&args))
-        goto EXIT;
-    dbus_message_iter_recurse(&args, &args_v);
-    if (DBUS_TYPE_STRING != dbus_message_iter_get_arg_type(&args_v))
-        goto EXIT;
-    dbus_message_iter_get_basic(&args_v, &puuid);
-    dbus_message_unref(msg);
-    _len = snprintf(uuid, len, "%s", puuid);
-    if (len <= _len)
-        return -1;
-
-    return 0;
-
-EXIT:
-    dbus_message_unref(msg);
-    return -1;
-}
-
-
-
-
-int power_on(const BL_ctx_t *ctx)
-{
-    if (NULL == ctx)
-        return -1;
-    return set_power(ctx->conn, ctx->hci_obj, 1);
-}
-int power_off(const BL_ctx_t *ctx)
-{
-    if (NULL == ctx)
-        return -1;
-    return set_power(ctx->conn, ctx->hci_obj, 0);
-}
-
-int scan_on(const BL_ctx_t *ctx)
-{
-    if (NULL == ctx)
-        return -1;
-    return set_discovering(ctx->conn, ctx->hci_obj, 1);
-}
-int scan_off(const BL_ctx_t *ctx)
-{
-    if (NULL == ctx)
-        return -1;
-    return set_discovering(ctx->conn, ctx->hci_obj, 0);
-}
-
-int connect_dev(const BL_ctx_t *ctx)
-{
-    if (NULL == ctx)
-        return -1;
-    return set_connect(ctx->conn, ctx->dev_obj, 1);
-}
-int disconnect_dev(const BL_ctx_t *ctx)
-{
-    if (NULL == ctx)
-        return -1;
-    return set_connect(ctx->conn, ctx->dev_obj, 0);
-}
-
-int start_notify(const BL_ctx_t *ctx)
-{
-    if (NULL == ctx)
-        return -1;
-    return set_notifying(ctx->conn, ctx->gatt_r_obj, 1);
-}
-int stop_notify(const BL_ctx_t *ctx)
-{
-    if (NULL == ctx)
-        return -1;
-    return set_notifying(ctx->conn, ctx->gatt_r_obj, 0);
-}
-
-
 int BL_get_dev_list(BL_dev_list_t *list, u32 len)
 {
     DBusError err;
@@ -1200,9 +1231,9 @@ int BL_get_dev_list(BL_dev_list_t *list, u32 len)
         if (DBUS_TYPE_OBJECT_PATH != dbus_message_iter_get_arg_type(&args_ae))
             goto CONTINUE;
         dbus_message_iter_get_basic(&args_ae, &obj);
-        if (strncmp("/org/bluez/hci0/dev_", obj, 20))
-            goto CONTINUE;
         if (37 != strlen(obj))
+            goto CONTINUE;
+        if (strncmp("/org/bluez/hci0/dev_", obj, 20))
             goto CONTINUE;
 
         if (0 == _get_dev_addr(conn, obj, list[i].mac,  sizeof(list[i].mac)))
@@ -1235,12 +1266,18 @@ int BL_openlock(const char *mac)
     u8 recv[16];
     u8 recv_enc[16];
     int i;
+    struct timespec time_s = {0};
+    struct timespec time_e = {0};
+    int time;
 
+
+    DEBUG("open lock: \"%s\"", mac);
 
     if (NULL == mac)
         return -1;
 
-    DEBUG("open lock: \"%s\"", mac);
+    if (bluelock_debug)
+        clock_gettime(CLOCK_MONOTONIC, &time_s);
 
     dbus_error_init(&err);
     ctx.conn = dbus_bus_get(DBUS_BUS_SYSTEM, &err);
@@ -1272,37 +1309,10 @@ int BL_openlock(const char *mac)
         return -1;
     }
 
-    if (0 != power_on(&ctx))
+    if (power_on(&ctx))
         return -1;
-    if (0 != scan_on(&ctx))
+    if (connect_dev(&ctx))
         return -1;
-    if (0 != connect_dev(&ctx))
-        return -1;
-
-    for (i = 30; i > 0; i--)
-    {
-        if (has_object(ctx.conn, "org.bluez", ctx.gatt_w_obj))
-            break;
-        //DEBUG("wait gatt write obj");
-        usleep(100*1000);
-    }
-    if (0 >= i)
-    {
-        ERROR("failed to find gatt write obj \"%s\" !\n", ctx.gatt_w_obj);
-        return -1;
-    }
-    for (i = 10; i > 0; i--)
-    {
-        if (has_object(ctx.conn, "org.bluez", ctx.gatt_r_obj))
-            break;
-        //DEBUG("wait gatt read obj");
-        usleep(100*1000);
-    }
-    if (0 >= i)
-    {
-        ERROR("failed to find gatt read obj \"%s\" !\n", ctx.gatt_r_obj);
-        return -1;
-    }
 
     /* 获取随机数 */
     memset(send, 0, sizeof(send));
@@ -1339,6 +1349,12 @@ int BL_openlock(const char *mac)
     {
         disconnect_dev(&ctx);
         return -1;
+    }
+    if (bluelock_debug)
+    {
+        clock_gettime(CLOCK_MONOTONIC, &time_e);
+        time = (time_e.tv_sec - time_s.tv_sec) * 10 + (time_e.tv_nsec - time_s.tv_nsec) / 100000000;
+        DEBUG("time: %d.%d s", time / 10, time % 10);
     }
 
     disconnect_dev(&ctx);
